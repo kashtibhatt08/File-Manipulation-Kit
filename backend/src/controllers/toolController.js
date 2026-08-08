@@ -253,9 +253,13 @@ exports.handleAudio = async (req, res, next) => {
       case 'convert': {
         const filePath = firstFile.path;
         const { format } = req.body;
-        outputPath = await audioService.convertAudio(filePath, format);
-        outputName = `converted_${path.basename(firstFile.originalname, path.extname(firstFile.originalname))}.${format}`;
-        mimeType = format.toLowerCase() === 'mp3' ? 'audio/mpeg' : `audio/${format.toLowerCase()}`;
+        if (!format || !['mp3', 'wav'].includes(format.toLowerCase().trim())) {
+          return res.status(400).json({ success: false, error: 'Audio format must be mp3 or wav.' });
+        }
+        const cleanFormat = format.toLowerCase().trim();
+        outputPath = await audioService.convertAudio(filePath, cleanFormat);
+        outputName = `converted_${path.basename(firstFile.originalname, path.extname(firstFile.originalname))}.${cleanFormat}`;
+        mimeType = cleanFormat === 'mp3' ? 'audio/mpeg' : `audio/${cleanFormat}`;
         break;
       }
       case 'merge': {
