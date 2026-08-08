@@ -221,139 +221,132 @@ exports.removeBackground = async (filePath) => {
   const outputFilename = `${uuidv4()}_no_bg.png`;
   const outputPath = path.join(TEMP_DIR, outputFilename);
 
-  // 1. External API Option (remove.bg) if API Key is configured in environment
-  if (process.env.REMOVE_BG_API_KEY) {
-    try {
-      const fs = require('fs');
-      const FormData = require('form-data'); // Wait, check if form-data is available. If not, use standard multipart format or native fetch FormData. Node 18+ fetch supports standard FormData.
-      
-      const formData = new globalThis.FormData();
-      const fileBuffer = fs.readFileSync(filePath);
-      const blob = new Blob([fileBuffer], { type: 'image/jpeg' });
-      formData.append('image_file', blob, path.basename(filePath));
-      formData.append('size', 'auto');
+  let processingPath = filePath;
+  let tempResizedPath = null;
 
-      const response = await fetch('https://api.remove.bg/v1.0/removebg', {
-        method: 'POST',
-        headers: {
-          'X-Api-Key': process.env.REMOVE_BG_API_KEY,
-        },
-        body: formData
-      });
-
-      if (response.ok) {
-        const arrayBuffer = await response.arrayBuffer();
-        fs.writeFileSync(outputPath, Buffer.from(arrayBuffer));
-        return outputPath;
-      } else {
-        const errorText = await response.text();
-        console.error('remove.bg API error response:', errorText);
-        // Fall back to local removal if API request failed
-      }
-    } catch (apiErr) {
-      console.error('remove.bg background removal failed, falling back to local method:', apiErr.message);
+  try {
+    const metadata = await sharp(filePath).metadata();
+    // Protect against huge images causing out-of-memory errors by limiting max dimension to 1500px
+    if (metadata.width > 1500 || metadata.height > 1500) {
+      tempResizedPath = path.join(TEMP_DIR, `${uuidv4()}_resized_temp.png`);
+      await sharp(filePath)
+        .resize({
+          width: metadata.width > metadata.height ? 1500 : undefined,
+          height: metadata.height >= metadata.width ? 1500 : undefined,
+          fit: 'inside'
+        })
+        .toFile(tempResizedPath);
+      processingPath = tempResizedPath;
     }
-  }
 
-  // 2. Local Fallback Method: Boundary-connected BFS Flood Fill Background Removal
-  const image = sharp(filePath);
-  const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
-  const { width, height, channels } = info;
+    const image = sharp(processingPath);
+    const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
+    const { width, height, channels } = info;
 
-  const outputBuffer = Buffer.alloc(width * height * 4);
-  
-  // Copy original pixel colors and set alpha to 255 (opaque) by default
-  for (let i = 0; i < width * height; i++) {
-    const rawIdx = i * channels;
-    const rgbaIdx = i * 4;
-    outputBuffer[rgbaIdx] = data[rawIdx];
-    outputBuffer[rgbaIdx + 1] = data[rawIdx + 1];
-    outputBuffer[rgbaIdx + 2] = data[rawIdx + 2];
-    outputBuffer[rgbaIdx + 3] = channels === 4 ? data[rawIdx + 3] : 255;
-  }
-
-  // Helper to retrieve pixel RGB color
-  const getPixel = (x, y) => {
-    const idx = (y * width + x) * channels;
-    return { r: data[idx], g: data[idx + 1], b: data[idx + 2] };
-  };
-
-  // Sample background seed color from corners
-  const corners = [
-    getPixel(0, 0),
-    getPixel(width - 1, 0),
-    getPixel(0, height - 1),
-    getPixel(width - 1, height - 1)
-  ];
-
-  let rBg = 0, gBg = 0, bBg = 0;
-  corners.forEach(c => { rBg += c.r; gBg += c.g; bBg += c.b; });
-  rBg = Math.round(rBg / 4);
-  gBg = Math.round(gBg / 4);
-  bBg = Math.round(bBg / 4);
-
-  // Euclidean color distance checker
-  const colorDiff = (p, rB, gB, bB) => {
-    return Math.sqrt((p.r - rB) ** 2 + (p.g - gB) ** 2 + (p.b - bB) ** 2);
-  };
-
-  const threshold = 35; // Sensitivity threshold for background detection
-  const queue = [];
-  const visited = new Uint8Array(width * height);
-
-  const pushNode = (x, y) => {
-    const idx = y * width + x;
-    if (!visited[idx]) {
-      const p = getPixel(x, y);
-      if (colorDiff(p, rBg, gBg, bBg) < threshold) {
-        visited[idx] = 1;
-        queue.push(x, y);
-        outputBuffer[idx * 4 + 3] = 0; // Set transparent
-      }
+    const outputBuffer = Buffer.alloc(width * height * 4);
+    
+    // Copy original pixel colors and set alpha to 255 (opaque) by default
+    for (let i = 0; i < width * height; i++) {
+      const rawIdx = i * channels;
+      const rgbaIdx = i * 4;
+      outputBuffer[rgbaIdx] = data[rawIdx];
+      outputBuffer[rgbaIdx + 1] = data[rawIdx + 1];
+      outputBuffer[rgbaIdx + 2] = data[rawIdx + 2];
+      outputBuffer[rgbaIdx + 3] = channels === 4 ? data[rawIdx + 3] : 255;
     }
-  };
 
-  // Seed BFS from the 4 corners
-  pushNode(0, 0);
-  pushNode(width - 1, 0);
-  pushNode(0, height - 1);
-  pushNode(width - 1, height - 1);
+    // Helper to retrieve pixel RGB color
+    const getPixel = (x, y) => {
+      const idx = (y * width + x) * channels;
+      return { r: data[idx], g: data[idx + 1], b: data[idx + 2] };
+    };
 
-  let head = 0;
-  const dirs = [
-    [0, 1], [0, -1], [1, 0], [-1, 0]
-  ];
+    // Sample background seed color from corners
+    const corners = [
+      getPixel(0, 0),
+      getPixel(width - 1, 0),
+      getPixel(0, height - 1),
+      getPixel(width - 1, height - 1)
+    ];
 
-  while (head < queue.length) {
-    const x = queue[head++];
-    const y = queue[head++];
+    let rBg = 0, gBg = 0, bBg = 0;
+    corners.forEach(c => { rBg += c.r; gBg += c.g; bBg += c.b; });
+    rBg = Math.round(rBg / 4);
+    gBg = Math.round(gBg / 4);
+    bBg = Math.round(bBg / 4);
 
-    for (let i = 0; i < dirs.length; i++) {
-      const nx = x + dirs[i][0];
-      const ny = y + dirs[i][1];
+    // Euclidean color distance checker
+    const colorDiff = (p, rB, gB, bB) => {
+      return Math.sqrt((p.r - rB) ** 2 + (p.g - gB) ** 2 + (p.b - bB) ** 2);
+    };
 
-      if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-        const nIdx = ny * width + nx;
-        if (!visited[nIdx]) {
-          const np = getPixel(nx, ny);
-          if (colorDiff(np, rBg, gBg, bBg) < threshold) {
-            visited[nIdx] = 1;
-            queue.push(nx, ny);
-            outputBuffer[nIdx * 4 + 3] = 0; // Make background transparent
+    const threshold = 35; // Sensitivity threshold for background detection
+    const queue = [];
+    const visited = new Uint8Array(width * height);
+
+    const pushNode = (x, y) => {
+      const idx = y * width + x;
+      if (!visited[idx]) {
+        const p = getPixel(x, y);
+        if (colorDiff(p, rBg, gBg, bBg) < threshold) {
+          visited[idx] = 1;
+          queue.push(x, y);
+          outputBuffer[idx * 4 + 3] = 0; // Set transparent
+        }
+      }
+    };
+
+    // Seed BFS from the 4 corners
+    pushNode(0, 0);
+    pushNode(width - 1, 0);
+    pushNode(0, height - 1);
+    pushNode(width - 1, height - 1);
+
+    let head = 0;
+    const dirs = [
+      [0, 1], [0, -1], [1, 0], [-1, 0]
+    ];
+
+    while (head < queue.length) {
+      const x = queue[head++];
+      const y = queue[head++];
+
+      for (let i = 0; i < dirs.length; i++) {
+        const nx = x + dirs[i][0];
+        const ny = y + dirs[i][1];
+
+        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+          const nIdx = ny * width + nx;
+          if (!visited[nIdx]) {
+            const np = getPixel(nx, ny);
+            if (colorDiff(np, rBg, gBg, bBg) < threshold) {
+              visited[nIdx] = 1;
+              queue.push(nx, ny);
+              outputBuffer[nIdx * 4 + 3] = 0; // Make background transparent
+            }
           }
         }
       }
     }
-  }
 
-  // Write output buffer back as PNG
-  await sharp(outputBuffer, {
-    raw: {
-      width,
-      height,
-      channels: 4
+    // Write output buffer back as PNG
+    await sharp(outputBuffer, {
+      raw: {
+        width,
+        height,
+        channels: 4
+      }
+    }).png().toFile(outputPath);
+
+  } finally {
+    if (tempResizedPath && fs.existsSync(tempResizedPath)) {
+      try {
+        fs.unlinkSync(tempResizedPath);
+      } catch (err) {
+        console.error('Failed to delete temp resized background removal image:', err.message);
+      }
     }
-  }).png().toFile(outputPath);
+  }
 
   return outputPath;
 };

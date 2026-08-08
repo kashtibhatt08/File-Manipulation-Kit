@@ -61,6 +61,27 @@ const AudioTools = () => {
       return;
     }
 
+    if (activeTab === 'trim') {
+      if (startTime === undefined || startTime === null || String(startTime).trim() === '') {
+        setErrorMsg('Start time is required.');
+        return;
+      }
+      if (duration === undefined || duration === null || String(duration).trim() === '') {
+        setErrorMsg('Duration is required.');
+        return;
+      }
+      const start = Number(startTime);
+      const dur = Number(duration);
+      if (isNaN(start) || start < 0) {
+        setErrorMsg('Start time must be 0 or greater.');
+        return;
+      }
+      if (isNaN(dur) || dur <= 0) {
+        setErrorMsg('Duration must be greater than 0.');
+        return;
+      }
+    }
+
     setErrorMsg('');
     setIsProcessing(true);
     setResult(null);

@@ -76,7 +76,10 @@ exports.handlePDF = async (req, res, next) => {
       }
       case 'rotate': {
         const filePath = firstFile.path;
-        const degrees = parseInt(req.body.degrees) || 90;
+        const degrees = parseInt(req.body.degrees);
+        if (isNaN(degrees) || ![90, 180, 270].includes(degrees)) {
+          return res.status(400).json({ success: false, error: 'Rotation angle must be 90, 180, or 270 degrees.' });
+        }
         outputPath = await pdfService.rotatePDF(filePath, degrees);
         outputName = 'rotated.pdf';
         break;
@@ -224,7 +227,25 @@ exports.handleAudio = async (req, res, next) => {
       case 'trim': {
         const filePath = firstFile.path;
         const { start, duration } = req.body;
-        outputPath = await audioService.trimAudio(filePath, start, duration);
+        
+        if (start === undefined || start === null || String(start).trim() === '') {
+          return res.status(400).json({ success: false, error: 'Start time is required.' });
+        }
+        if (duration === undefined || duration === null || String(duration).trim() === '') {
+          return res.status(400).json({ success: false, error: 'Duration is required.' });
+        }
+        
+        const parsedStart = Number(start);
+        const parsedDuration = Number(duration);
+        
+        if (isNaN(parsedStart) || parsedStart < 0) {
+          return res.status(400).json({ success: false, error: 'Start time must be 0 or greater.' });
+        }
+        if (isNaN(parsedDuration) || parsedDuration <= 0) {
+          return res.status(400).json({ success: false, error: 'Duration must be greater than 0.' });
+        }
+
+        outputPath = await audioService.trimAudio(filePath, parsedStart, parsedDuration);
         outputName = `trimmed_${firstFile.originalname}`;
         mimeType = firstFile.mimetype;
         break;
@@ -234,7 +255,7 @@ exports.handleAudio = async (req, res, next) => {
         const { format } = req.body;
         outputPath = await audioService.convertAudio(filePath, format);
         outputName = `converted_${path.basename(firstFile.originalname, path.extname(firstFile.originalname))}.${format}`;
-        mimeType = `audio/${format}`;
+        mimeType = format.toLowerCase() === 'mp3' ? 'audio/mpeg' : `audio/${format.toLowerCase()}`;
         break;
       }
       case 'merge': {

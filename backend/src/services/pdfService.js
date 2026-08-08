@@ -126,13 +126,18 @@ exports.splitPDF = async (filePath, ranges = 'all') => {
  * @returns {Promise<string>} - Path to the rotated PDF
  */
 exports.rotatePDF = async (filePath, rotationDegrees) => {
+  const parsedRotation = parseInt(rotationDegrees);
+  if (isNaN(parsedRotation) || ![90, 180, 270].includes(parsedRotation)) {
+    throw new Error('Rotation angle must be 90, 180, or 270 degrees.');
+  }
+
   const pdfBytes = fs.readFileSync(filePath);
   const pdf = await PDFDocument.load(pdfBytes);
   const pages = pdf.getPages();
   
   pages.forEach((page) => {
     const currentRotation = page.getRotation().angle;
-    page.setRotation(degrees((currentRotation + rotationDegrees) % 360));
+    page.setRotation(degrees((currentRotation + parsedRotation) % 360));
   });
   
   const rotatedBytes = await pdf.save();

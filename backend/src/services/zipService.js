@@ -7,6 +7,38 @@ const { v4: uuidv4 } = require('uuid');
 const TEMP_DIR = path.join(__dirname, '..', '..', process.env.TEMP_UPLOAD_DIR || 'uploads/temp');
 
 /**
+ * Sanitizes zip entry names to prevent traversal/absolute path traversal vulnerabilities
+ */
+const sanitizeZipEntryName = (name) => {
+  if (!name) return 'file';
+  
+  // Replace backslashes with forward slashes
+  let sanitized = name.replace(/\\/g, '/');
+  
+  // Remove drive letters (e.g., C:/path -> /path)
+  sanitized = sanitized.replace(/^[a-zA-Z]:/g, '');
+  
+  // Split path into segments
+  const segments = sanitized.split('/');
+  
+  // Filter out empty segments and traversal segments ('..', '.')
+  const safeSegments = segments.filter(seg => {
+    const s = seg.trim();
+    return s !== '' && s !== '..' && s !== '.';
+  });
+  
+  // Reconstruct path
+  let safeName = safeSegments.join('/');
+  
+  // Fallback if everything was stripped
+  if (!safeName) {
+    safeName = `file_${uuidv4().substring(0, 8)}`;
+  }
+  
+  return safeName;
+};
+
+/**
  * Zip an array of files
  * @param {Array<Object>} files - Array of files with path and originalName
  * @returns {Promise<string>} - Path to the created zip file
@@ -31,9 +63,9 @@ exports.zipFiles = (files) => {
 
     archive.pipe(outputStream);
 
-    // Add each file to the zip archive
+    // Add each file to the zip archive with sanitized entry name
     files.forEach(file => {
-      archive.file(file.path, { name: file.originalname });
+      archive.file(file.path, { name: sanitizeZipEntryName(file.originalname) });
     });
 
     archive.finalize();

@@ -64,6 +64,14 @@ const PDFTools = () => {
       return;
     }
 
+    if (activeTab === 'rotate') {
+      const deg = parseInt(rotateDegrees);
+      if (isNaN(deg) || ![90, 180, 270].includes(deg)) {
+        setErrorMsg('Rotation angle must be 90, 180, or 270 degrees.');
+        return;
+      }
+    }
+
     setErrorMsg('');
     setIsProcessing(true);
     setResult(null);

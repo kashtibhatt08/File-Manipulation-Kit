@@ -35,6 +35,16 @@ const checkFFmpeg = () => {
  * @returns {Promise<string>} - Path to trimmed audio
  */
 exports.trimAudio = async (filePath, start, duration) => {
+  const parsedStart = parseFloat(start);
+  const parsedDuration = parseFloat(duration);
+
+  if (isNaN(parsedStart) || parsedStart < 0) {
+    throw new Error('Start time must be 0 or greater.');
+  }
+  if (isNaN(parsedDuration) || parsedDuration <= 0) {
+    throw new Error('Duration must be greater than 0.');
+  }
+
   const ext = path.extname(filePath).toLowerCase();
   const outputFilename = `${uuidv4()}_trimmed${ext}`;
   const outputPath = path.join(TEMP_DIR, outputFilename);
@@ -46,8 +56,8 @@ exports.trimAudio = async (filePath, start, duration) => {
 
   return new Promise((resolve, reject) => {
     ffmpeg(filePath)
-      .setStartTime(parseFloat(start))
-      .setDuration(parseFloat(duration))
+      .setStartTime(parsedStart)
+      .setDuration(parsedDuration)
       .output(outputPath)
       .on('end', () => resolve(outputPath))
       .on('error', (err) => reject(new Error(`FFmpeg error: ${err.message}`)))
