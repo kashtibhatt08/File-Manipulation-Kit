@@ -15,7 +15,7 @@ const initializeTempDir = () => {
 const cleanupFiles = () => {
   initializeTempDir();
   
-  fs.readdir(TEMP_DIR, (err, files) => {
+  fs.readdir(TEMP_DIR, (err, entries) => {
     if (err) {
       console.error(`Error reading temp directory: ${err.message}`);
       return;
@@ -23,22 +23,34 @@ const cleanupFiles = () => {
 
     const now = Date.now();
     
-    files.forEach(file => {
-      const filePath = path.join(TEMP_DIR, file);
-      
-      fs.stat(filePath, (err, stats) => {
+    entries.forEach(entry => {
+      const entryPath = path.join(TEMP_DIR, entry);
+      fs.stat(entryPath, (err, stats) => {
         if (err) {
-          console.error(`Error getting file stats for ${file}: ${err.message}`);
+          console.error(`Error getting stats for ${entry}: ${err.message}`);
           return;
         }
 
         const age = now - stats.mtimeMs;
-        if (age > FILE_LIFETIME_MS) {
-          fs.unlink(filePath, unlinkErr => {
+        if (age <= FILE_LIFETIME_MS) return;
+
+        if (stats.isDirectory()) {
+          fs.rm(entryPath, { recursive: true, force: true }, (unlinkErr) => {
             if (unlinkErr) {
-              console.error(`Error deleting expired file ${file}: ${unlinkErr.message}`);
+              console.error(`Error deleting expired directory ${entry}: ${unlinkErr.message}`);
             } else {
-              console.log(`Successfully deleted expired file: ${file} (Age: ${Math.round(age / 60000)} mins)`);
+              console.log(`Successfully deleted expired temp directory: ${entry} (Age: ${Math.round(age / 60000)} mins)`);
+            }
+          });
+          return;
+        }
+
+        if (stats.isFile()) {
+          fs.unlink(entryPath, unlinkErr => {
+            if (unlinkErr) {
+              console.error(`Error deleting expired file ${entry}: ${unlinkErr.message}`);
+            } else {
+              console.log(`Successfully deleted expired file: ${entry} (Age: ${Math.round(age / 60000)} mins)`);
             }
           });
         }

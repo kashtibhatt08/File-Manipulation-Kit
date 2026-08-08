@@ -37,8 +37,9 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       const msg = err.response?.data?.error || 'Registration failed';
       setError(msg);
-      setLoading(false);
       return { success: false, error: msg };
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -53,8 +54,9 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       const msg = err.response?.data?.error || 'Login failed';
       setError(msg);
-      setLoading(false);
       return { success: false, error: msg };
+    } finally {
+      setLoading(false);
     }
   };
 

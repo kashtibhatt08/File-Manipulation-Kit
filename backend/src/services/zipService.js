@@ -98,6 +98,15 @@ exports.unzipFile = async (filePath) => {
     throw new Error('The uploaded ZIP file is empty.');
   }
 
+  const MAX_ENTRIES = 200;
+  const MAX_EXTRACT_SIZE = 200 * 1024 * 1024; // 200MB
+  let extractedSize = 0;
+
+  if (directory.files.length > MAX_ENTRIES) {
+    fs.rmSync(extractionPath, { recursive: true, force: true });
+    throw new Error('ZIP file contains too many entries.');
+  }
+
   for (const file of directory.files) {
     const targetPath = path.resolve(extractionPath, file.path);
     const relative = path.relative(extractionPath, targetPath);
@@ -117,8 +126,13 @@ exports.unzipFile = async (filePath) => {
       fs.mkdirSync(targetDir, { recursive: true });
     }
 
-    // Create write stream and write buffer contents
     const buffer = await file.buffer();
+    extractedSize += buffer.length;
+    if (extractedSize > MAX_EXTRACT_SIZE) {
+      fs.rmSync(extractionPath, { recursive: true, force: true });
+      throw new Error('ZIP archive is too large to extract safely.');
+    }
+
     fs.writeFileSync(targetPath, buffer);
 
     extractedFiles.push({

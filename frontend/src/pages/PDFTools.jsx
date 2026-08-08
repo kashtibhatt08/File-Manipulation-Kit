@@ -96,11 +96,7 @@ const PDFTools = () => {
     }
 
     try {
-      const res = await api.post('/api/files/pdf', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
+      const res = await api.post('/api/files/pdf', formData);
       setResult(res.data);
     } catch (err) {
       setErrorMsg(err.response?.data?.error || 'An error occurred during file processing');

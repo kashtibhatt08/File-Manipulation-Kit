@@ -1,10 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: '', // Handled by Vite dev proxy in development
-  headers: {
-    'Content-Type': 'application/json'
-  }
+  baseURL: '' // Handled by Vite dev proxy in development
 });
 
 // Request interceptor to attach JWT token to every request

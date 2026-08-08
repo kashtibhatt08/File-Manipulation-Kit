@@ -72,11 +72,7 @@ const ZIPTools = () => {
     }
 
     try {
-      const res = await api.post('/api/files/zip', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
+      const res = await api.post('/api/files/zip', formData);
       setResult(res.data);
     } catch (err) {
       setErrorMsg(err.response?.data?.error || 'An error occurred during file processing');

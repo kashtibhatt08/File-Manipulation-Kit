@@ -22,15 +22,28 @@ const storage = multer.diskStorage({
   }
 });
 
+// Allowed file extensions and mime types
+const allowedFileTypes = {
+  '.pdf': ['application/pdf'],
+  '.jpg': ['image/jpeg'],
+  '.jpeg': ['image/jpeg'],
+  '.png': ['image/png'],
+  '.webp': ['image/webp'],
+  '.mp3': ['audio/mpeg'],
+  '.wav': ['audio/wav', 'audio/x-wav', 'audio/wave'],
+  '.zip': ['application/zip', 'application/x-zip-compressed', 'multipart/x-zip']
+};
+
 // File Filtering (Images, PDFs, Audios, ZIPs)
 const fileFilter = (req, file, cb) => {
-  const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.mp3', '.wav', '.zip'];
   const ext = path.extname(file.originalname).toLowerCase();
+  const allowedMimes = allowedFileTypes[ext] || [];
+  const normalizedMime = (file.mimetype || '').toLowerCase();
 
-  if (allowedExtensions.includes(ext)) {
+  if (allowedMimes.length > 0 && allowedMimes.includes(normalizedMime)) {
     cb(null, true);
   } else {
-    cb(new Error(`Unsupported file type: ${ext}. Supported types: PDF, JPG, PNG, WEBP, MP3, WAV, ZIP.`), false);
+    cb(new Error(`Unsupported file type: ${ext} / ${normalizedMime}. Supported types: PDF, JPG, PNG, WEBP, MP3, WAV, ZIP.`), false);
   }
 };
 

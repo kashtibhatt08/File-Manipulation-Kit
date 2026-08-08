@@ -15,6 +15,13 @@ exports.register = async (req, res, next) => {
   try {
     const { name, email, password } = req.body;
 
+    if (!name || !email || !password) {
+      return res.status(400).json({ success: false, error: 'Name, email and password are required' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ success: false, error: 'Password must be at least 6 characters long' });
+    }
+
     // Check if user exists
     const userExists = await User.findOne({ email });
     if (userExists) {
@@ -38,7 +45,8 @@ exports.register = async (req, res, next) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        favouriteTools: user.favouriteTools
+        favouriteTools: user.favouriteTools,
+        createdAt: user.createdAt
       }
     });
   } catch (error) {
@@ -80,7 +88,8 @@ exports.login = async (req, res, next) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        favouriteTools: user.favouriteTools
+        favouriteTools: user.favouriteTools,
+        createdAt: user.createdAt
       }
     });
   } catch (error) {

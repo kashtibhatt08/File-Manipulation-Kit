@@ -20,7 +20,6 @@ const ALL_TOOLS = [
   { id: 'img-crop', name: 'Crop Image', category: 'image', desc: 'Extract a specific portion of the image.', icon: ImageIcon, route: '/image?tool=crop' },
   { id: 'img-convert', name: 'Convert Format', category: 'image', desc: 'Convert between PNG, JPG, and WEBP.', icon: ImageIcon, route: '/image?tool=convert' },
   { id: 'img-watermark', name: 'Watermark', category: 'image', desc: 'Add overlay text for brand protection.', icon: ImageIcon, route: '/image?tool=watermark' },
-  { id: 'img-bg-removal', name: 'Background Removal', category: 'image', desc: 'Extract subject with alpha transparency.', icon: ImageIcon, route: '/image?tool=removeBackground' },
 
   { id: 'audio-trim', name: 'Trim Audio', category: 'audio', desc: 'Extract segments using start and duration.', icon: Music, route: '/audio?tool=trim' },
   { id: 'audio-merge', name: 'Merge Audio', category: 'audio', desc: 'Join audio tracks into a unified MP3.', icon: Music, route: '/audio?tool=merge' },

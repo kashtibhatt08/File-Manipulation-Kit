@@ -19,7 +19,7 @@ router.post('/audio', optionalAuth, upload.any(), handleAudio);
 router.post('/zip', optionalAuth, upload.any(), handleZip);
 
 // File Download & User History Endpoints
-router.get('/download/:token', downloadFile);
+router.get('/download/:token', optionalAuth, downloadFile);
 router.get('/history', protect, getHistory);
 
 module.exports = router;

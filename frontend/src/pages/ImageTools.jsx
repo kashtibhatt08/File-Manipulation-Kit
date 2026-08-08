@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import FileUploader from '../components/FileUploader';
 import api from '../services/api';
 import { 
   Image as ImageIcon, Minimize2, Move, Crop, 
-  RefreshCw, Type, Eraser, ArrowRight, Download, AlertCircle
+  RefreshCw, Type, ArrowRight, Download, AlertCircle
 } from 'lucide-react';
 
 const IMAGE_TOOLS = [
@@ -12,8 +12,7 @@ const IMAGE_TOOLS = [
   { id: 'resize', name: 'Resize Image', icon: Move, desc: 'Alter pixel width and height dimensions of images.', accept: { 'image/*': ['.png', '.jpg', '.jpeg', '.webp'] } },
   { id: 'crop', name: 'Crop Image', icon: Crop, desc: 'Isolate a custom bounding box region from the image.', accept: { 'image/*': ['.png', '.jpg', '.jpeg', '.webp'] } },
   { id: 'convert', name: 'Convert Format', icon: RefreshCw, desc: 'Convert image encoding types between PNG, JPG, and WEBP.', accept: { 'image/*': ['.png', '.jpg', '.jpeg', '.webp'] } },
-  { id: 'watermark', name: 'Add Watermark', icon: Type, desc: 'Embed text strings in custom alignment positions.', accept: { 'image/*': ['.png', '.jpg', '.jpeg', '.webp'] } },
-  { id: 'removeBackground', name: 'Remove Background', icon: Eraser, desc: 'Erase ambient image backgrounds to yield transparent alpha layers.', accept: { 'image/*': ['.png', '.jpg', '.jpeg', '.webp'] } }
+  { id: 'watermark', name: 'Add Watermark', icon: Type, desc: 'Embed text strings in custom alignment positions.', accept: { 'image/*': ['.png', '.jpg', '.jpeg', '.webp'] } }
 ];
 
 const ImageTools = () => {
@@ -34,6 +33,120 @@ const ImageTools = () => {
   const [targetFormat, setTargetFormat] = useState('png');
   const [watermarkText, setWatermarkText] = useState('Universal File Toolkit');
   const [watermarkPos, setWatermarkPos] = useState('bottom-right');
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [cropArea, setCropArea] = useState({ width: 200, height: 200, left: 0, top: 0 });
+  const [imageDisplaySize, setImageDisplaySize] = useState({ width: 0, height: 0 });
+  const [imageNaturalSize, setImageNaturalSize] = useState({ width: 0, height: 0 });
+  const imageRef = useRef(null);
+  const dragStateRef = useRef({
+    action: null,
+    direction: null,
+    startX: 0,
+    startY: 0,
+    crop: cropArea
+  });
+
+  const syncCropInputs = (next) => {
+    setWidth(String(Math.round(next.width)));
+    setHeight(String(Math.round(next.height)));
+    setCropLeft(String(Math.round(next.left)));
+    setCropTop(String(Math.round(next.top)));
+  };
+
+  const updateCropArea = (next) => {
+    const clamped = clampCropArea(next);
+    setCropArea(clamped);
+    syncCropInputs(clamped);
+  };
+
+  const handleImageLoad = () => {
+    if (!imageRef.current) return;
+    const img = imageRef.current;
+    const rect = img.getBoundingClientRect();
+    const displayWidth = rect.width;
+    const displayHeight = rect.height;
+    const defaultWidth = Math.min(200, displayWidth);
+    const defaultHeight = Math.min(200, displayHeight);
+    const defaultLeft = Math.max(0, (displayWidth - defaultWidth) / 2);
+    const defaultTop = Math.max(0, (displayHeight - defaultHeight) / 2);
+
+    setImageNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
+    setImageDisplaySize({ width: displayWidth, height: displayHeight });
+
+    const nextCrop = {
+      width: defaultWidth,
+      height: defaultHeight,
+      left: defaultLeft,
+      top: defaultTop
+    };
+
+    setCropArea(nextCrop);
+    syncCropInputs(nextCrop);
+  };
+
+  const updateCropInteraction = (action, direction, e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    dragStateRef.current = {
+      action,
+      direction,
+      startX: e.clientX,
+      startY: e.clientY,
+      crop: cropArea
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp, { once: true });
+  };
+
+  const handlePointerMove = (e) => {
+    const state = dragStateRef.current;
+    if (!state.action) return;
+    const dx = e.clientX - state.startX;
+    const dy = e.clientY - state.startY;
+    const next = { ...state.crop };
+
+    if (state.action === 'move') {
+      next.left = state.crop.left + dx;
+      next.top = state.crop.top + dy;
+    } else if (state.action === 'resize') {
+      if (state.direction.includes('e')) {
+        next.width = state.crop.width + dx;
+      }
+      if (state.direction.includes('s')) {
+        next.height = state.crop.height + dy;
+      }
+      if (state.direction.includes('w')) {
+        next.width = state.crop.width - dx;
+        next.left = state.crop.left + dx;
+      }
+      if (state.direction.includes('n')) {
+        next.height = state.crop.height - dy;
+        next.top = state.crop.top + dy;
+      }
+    }
+
+    updateCropArea(next);
+  };
+
+  const handlePointerUp = () => {
+    dragStateRef.current.action = null;
+    dragStateRef.current.direction = null;
+    window.removeEventListener('pointermove', handlePointerMove);
+  };
+
+  const handleResizeHandleClass = (direction) => {
+    const base = 'absolute w-4 h-4 rounded-full bg-white border border-indigo-500 shadow-sm';
+    switch (direction) {
+      case 'nw': return `${base} -top-2 -left-2 cursor-nwse-resize`;
+      case 'ne': return `${base} -top-2 -right-2 cursor-nesw-resize`;
+      case 'sw': return `${base} -bottom-2 -left-2 cursor-nesw-resize`;
+      case 'se': return `${base} -bottom-2 -right-2 cursor-nwse-resize`;
+      default: return base;
+    }
+  };
 
   // Sync tab selection with query parameter if present
   useEffect(() => {
@@ -52,11 +165,66 @@ const ImageTools = () => {
     }
   }, [location.state]);
 
+  useEffect(() => {
+    if (!files.length) {
+      setPreviewUrl(null);
+      return;
+    }
+
+    const file = files[0];
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+
+    setCropArea((prev) => ({
+      width: prev.width || 200,
+      height: prev.height || 200,
+      left: 0,
+      top: 0
+    }));
+
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [files]);
+
+  useEffect(() => {
+    if (!previewUrl || !imageRef.current) return;
+    const img = imageRef.current;
+    const rect = img.getBoundingClientRect();
+    setImageNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
+    setImageDisplaySize({ width: rect.width, height: rect.height });
+  }, [previewUrl]);
+
+  const clampCropArea = (partial) => {
+    const next = { ...cropArea, ...partial };
+
+    next.width = Math.max(1, Math.min(next.width, imageDisplaySize.width || next.width));
+    next.height = Math.max(1, Math.min(next.height, imageDisplaySize.height || next.height));
+    next.left = Math.max(0, Math.min(next.left, (imageDisplaySize.width || 0) - next.width));
+    next.top = Math.max(0, Math.min(next.top, (imageDisplaySize.height || 0) - next.height));
+
+    return next;
+  };
+
+  const handleCropInput = (field, value) => {
+    const numeric = Number(value);
+    if (Number.isNaN(numeric)) return;
+    setCropArea((prev) => clampCropArea({ ...prev, [field]: numeric }));
+    if (field === 'width') setWidth(value);
+    if (field === 'height') setHeight(value);
+    if (field === 'left') setCropLeft(value);
+    if (field === 'top') setCropTop(value);
+  };
+
   const resetState = () => {
     setFiles([]);
     setErrorMsg('');
     setResult(null);
     setIsProcessing(false);
+    setPreviewUrl(null);
+    setCropArea({ width: 200, height: 200, left: 0, top: 0 });
+    setImageDisplaySize({ width: 0, height: 0 });
+    setImageNaturalSize({ width: 0, height: 0 });
   };
 
   const handleTabChange = (tabId) => {
@@ -125,11 +293,7 @@ const ImageTools = () => {
     }
 
     try {
-      const res = await api.post('/api/files/image', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
+      const res = await api.post('/api/files/image', formData);
       setResult(res.data);
     } catch (err) {
       setErrorMsg(err.response?.data?.error || 'An error occurred during file processing');
@@ -146,7 +310,7 @@ const ImageTools = () => {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Image Utilities</h1>
-        <p className="text-xs text-slate-400">Compress, crop, scale, apply overlays, convert format, and extract backgrounds.</p>
+        <p className="text-xs text-slate-400">Compress, crop, scale, apply overlays, and convert formats.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -264,7 +428,7 @@ const ImageTools = () => {
                         <input 
                           type="number" 
                           value={width}
-                          onChange={(e) => setWidth(e.target.value)}
+                          onChange={(e) => handleCropInput('width', e.target.value)}
                           placeholder="e.g. 400"
                           className="block w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:bg-slate-900 dark:border-slate-800 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
                         />
@@ -274,7 +438,7 @@ const ImageTools = () => {
                         <input 
                           type="number" 
                           value={height}
-                          onChange={(e) => setHeight(e.target.value)}
+                          onChange={(e) => handleCropInput('height', e.target.value)}
                           placeholder="e.g. 400"
                           className="block w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:bg-slate-900 dark:border-slate-800 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
                         />
@@ -286,7 +450,7 @@ const ImageTools = () => {
                         <input 
                           type="number" 
                           value={cropLeft}
-                          onChange={(e) => setCropLeft(e.target.value)}
+                          onChange={(e) => handleCropInput('left', e.target.value)}
                           placeholder="0"
                           className="block w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:bg-slate-900 dark:border-slate-800 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
                         />
@@ -296,12 +460,49 @@ const ImageTools = () => {
                         <input 
                           type="number" 
                           value={cropTop}
-                          onChange={(e) => setCropTop(e.target.value)}
+                          onChange={(e) => handleCropInput('top', e.target.value)}
                           placeholder="0"
                           className="block w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:bg-slate-900 dark:border-slate-800 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
                         />
                       </div>
                     </div>
+
+                    {previewUrl && (
+                      <div className="mt-4 space-y-3">
+                        <h4 className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Crop preview</h4>
+                        <div className="relative border border-slate-300 dark:border-slate-800 rounded-2xl overflow-hidden bg-slate-900/5">
+                          <img
+                            ref={imageRef}
+                            src={previewUrl}
+                            alt="Crop preview"
+                            className="w-full max-h-[420px] object-contain"
+                            onLoad={handleImageLoad}
+                          />
+                          <div
+                            className="absolute border-2 border-indigo-500 bg-indigo-500/10 cursor-move"
+                            style={{
+                              top: cropArea.top,
+                              left: cropArea.left,
+                              width: cropArea.width,
+                              height: cropArea.height
+                            }}
+                            onPointerDown={(e) => updateCropInteraction('move', null, e)}
+                          >
+                            {['nw', 'ne', 'sw', 'se'].map((direction) => (
+                              <span
+                                key={direction}
+                                onPointerDown={(e) => updateCropInteraction('resize', direction, e)}
+                                className={handleResizeHandleClass(direction)}
+                              />
+                            ))}
+                          </div>
+                          <div className="absolute inset-x-0 bottom-0 bg-black/40 p-3 text-[10px] text-white">
+                            <p>Width: {cropArea.width}px · Height: {cropArea.height}px · Left: {cropArea.left}px · Top: {cropArea.top}px</p>
+                            <p className="text-slate-200">Drag or stretch the crop box by moving the selection or adjusting the handles.</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -356,9 +557,6 @@ const ImageTools = () => {
                   </div>
                 )}
 
-                {activeTab === 'removeBackground' && (
-                  <p className="text-[10px] text-slate-400 italic">This will output a transparent PNG by masking border color spaces. Click compile below to begin processing.</p>
-                )}
               </div>
             )}
 

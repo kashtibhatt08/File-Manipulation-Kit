@@ -11,6 +11,16 @@ const fileHelper = require('../utils/fileHelper');
 
 const TEMP_DIR = path.join(__dirname, '..', '..', process.env.TEMP_UPLOAD_DIR || 'uploads/temp');
 
+const validateUploadedFiles = async (files) => {
+  for (const file of files) {
+    try {
+      await fileHelper.validateUploadedFileType(file.path, file.originalname);
+    } catch (error) {
+      throw new Error(`File validation failed for ${file.originalname}: ${error.message}`);
+    }
+  }
+};
+
 // Helper to record file history
 const recordHistory = async (req, originalName, processedPath, toolUsed, mimeType) => {
   const stats = fs.statSync(processedPath);
@@ -49,6 +59,10 @@ exports.handlePDF = async (req, res, next) => {
 
     if (!allFiles.length && action !== 'imageToPDF') {
       return res.status(400).json({ success: false, error: 'Please upload files to process' });
+    }
+
+    if (allFiles.length > 0) {
+      await validateUploadedFiles(allFiles);
     }
 
     switch (action) {
@@ -145,6 +159,7 @@ exports.handleImage = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Please upload an image file to process' });
     }
 
+    await validateUploadedFiles([firstFile]);
     const filePath = firstFile.path;
 
     switch (action) {
@@ -183,12 +198,6 @@ exports.handleImage = async (req, res, next) => {
         mimeType = firstFile.mimetype;
         break;
       }
-      case 'removeBackground': {
-        outputPath = await imageService.removeBackground(filePath);
-        outputName = `no_bg_${path.basename(firstFile.originalname, path.extname(firstFile.originalname))}.png`;
-        mimeType = 'image/png';
-        break;
-      }
       default:
         return res.status(400).json({ success: false, error: 'Invalid Image action' });
     }
@@ -222,6 +231,8 @@ exports.handleAudio = async (req, res, next) => {
     if (!allFiles.length) {
       return res.status(400).json({ success: false, error: 'Please upload audio files to process' });
     }
+
+    await validateUploadedFiles(allFiles);
 
     switch (action) {
       case 'trim': {
@@ -304,6 +315,7 @@ exports.handleZip = async (req, res, next) => {
         if (!allFiles.length) {
           return res.status(400).json({ success: false, error: 'Please upload files to zip' });
         }
+        await validateUploadedFiles(allFiles);
         const zipFilesInput = allFiles.map(f => ({ path: f.path, originalname: f.originalname }));
         outputPath = await zipService.zipFiles(zipFilesInput);
         outputName = 'archive.zip';
@@ -349,20 +361,33 @@ exports.handleZip = async (req, res, next) => {
 exports.downloadFile = async (req, res, next) => {
   try {
     const { token } = req.params;
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ success: false, error: 'Invalid download token' });
+    }
+
     const history = await FileHistory.findOne({ downloadToken: token });
     if (!history) {
       return res.status(404).json({ success: false, error: 'Link expired or file does not exist' });
     }
+
+    if (history.user && req.user && history.user.toString() !== req.user.id.toString()) {
+      return res.status(403).json({ success: false, error: 'You do not have permission to download this file' });
+    }
+
     const filePath = path.join(TEMP_DIR, history.processedName);
+    if (!filePath.startsWith(TEMP_DIR)) {
+      return res.status(400).json({ success: false, error: 'Invalid file path' });
+    }
+
     if (!fs.existsSync(filePath)) {
       return res.status(410).json({ success: false, error: 'File deleted from disk due to privacy duration timeout' });
     }
+
     res.download(filePath, history.originalName, async (err) => {
       if (!err || err.code === 'ECONNRESET') {
         fs.unlink(filePath, (unlinkErr) => {
           if (unlinkErr) console.error(`Error deleting file post-download: ${unlinkErr.message}`);
         });
-        history.isDownloaded = true;
         await FileHistory.findByIdAndDelete(history._id);
       }
     });

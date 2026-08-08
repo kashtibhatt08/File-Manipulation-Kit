@@ -1,9 +1,21 @@
 const ffmpeg = require('fluent-ffmpeg');
+const ffmpegStatic = require('ffmpeg-static');
+const ffprobeStatic = require('ffprobe-static');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
 const TEMP_DIR = path.join(__dirname, '..', '..', process.env.TEMP_UPLOAD_DIR || 'uploads/temp');
+
+const FFMPEG_PATH = process.env.FFMPEG_PATH || ffmpegStatic;
+const FFPROBE_PATH = process.env.FFPROBE_PATH || ffprobeStatic.path;
+
+if (FFMPEG_PATH) {
+  ffmpeg.setFfmpegPath(FFMPEG_PATH);
+}
+if (FFPROBE_PATH) {
+  ffmpeg.setFfprobePath(FFPROBE_PATH);
+}
 
 /**
  * Helper to verify FFmpeg availability
@@ -11,9 +23,6 @@ const TEMP_DIR = path.join(__dirname, '..', '..', process.env.TEMP_UPLOAD_DIR ||
 const checkFFmpeg = () => {
   return new Promise((resolve) => {
     try {
-      if (process.env.FFMPEG_PATH) {
-        ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH);
-      }
       ffmpeg.getAvailableFormats((err) => {
         if (err) {
           resolve(false);
