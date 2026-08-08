@@ -70,6 +70,33 @@ const ImageTools = () => {
       return;
     }
 
+    // UI-level validations
+    if (activeTab === 'resize') {
+      if (!width && !height) {
+        setErrorMsg('Please specify at least width or height for resizing.');
+        return;
+      }
+      const w = parseInt(width);
+      const h = parseInt(height);
+      if ((width && (isNaN(w) || w <= 0)) || (height && (isNaN(h) || h <= 0))) {
+        setErrorMsg('Width and height dimensions must be valid positive numbers.');
+        return;
+      }
+    } else if (activeTab === 'crop') {
+      const w = parseInt(width);
+      const h = parseInt(height);
+      const l = parseInt(cropLeft);
+      const t = parseInt(cropTop);
+      if (isNaN(w) || w <= 0 || isNaN(h) || h <= 0) {
+        setErrorMsg('Crop width and crop height must be valid positive numbers.');
+        return;
+      }
+      if (isNaN(l) || l < 0 || isNaN(t) || t < 0) {
+        setErrorMsg('Left and Top offsets must be valid non-negative numbers.');
+        return;
+      }
+    }
+
     setErrorMsg('');
     setIsProcessing(true);
     setResult(null);

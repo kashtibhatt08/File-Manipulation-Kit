@@ -42,32 +42,65 @@ exports.splitPDF = async (filePath, ranges = 'all') => {
   const outputFiles = [];
   
   let pagesToExtract = [];
+  const cleanRanges = ranges.trim().toLowerCase();
   
-  if (ranges === 'all') {
+  if (cleanRanges === 'all') {
     for (let i = 0; i < totalPages; i++) {
       pagesToExtract.push([i]);
     }
   } else {
-    // Parse range like "1-3, 5"
-    const parts = ranges.split(',');
+    const parts = cleanRanges.split(',');
     for (const part of parts) {
       const trimmed = part.trim();
+      if (!trimmed) {
+        throw new Error('Range list contains an empty or malformed segment.');
+      }
+      
       if (trimmed.includes('-')) {
-        const [start, end] = trimmed.split('-').map(Number);
+        const rangeParts = trimmed.split('-');
+        if (rangeParts.length !== 2) {
+          throw new Error(`Invalid range format: "${trimmed}". Expected "start-end".`);
+        }
+        
+        const start = Number(rangeParts[0].trim());
+        const end = Number(rangeParts[1].trim());
+        
+        if (isNaN(start) || isNaN(end)) {
+          throw new Error(`Invalid numbers in range: "${trimmed}".`);
+        }
+        if (start <= 0 || end <= 0) {
+          throw new Error(`Page numbers must be positive integers: "${trimmed}".`);
+        }
+        if (start > totalPages || end > totalPages) {
+          throw new Error(`Page numbers out of range (PDF only has ${totalPages} pages): "${trimmed}".`);
+        }
+        if (start > end) {
+          throw new Error(`Reversed range is invalid: "${trimmed}". Start page must be less than or equal to end page.`);
+        }
+        
         const rangePages = [];
         for (let i = start - 1; i <= end - 1; i++) {
-          if (i >= 0 && i < totalPages) {
-            rangePages.push(i);
-          }
+          rangePages.push(i);
         }
-        if (rangePages.length > 0) pagesToExtract.push(rangePages);
+        pagesToExtract.push(rangePages);
       } else {
-        const pageNum = Number(trimmed) - 1;
-        if (pageNum >= 0 && pageNum < totalPages) {
-          pagesToExtract.push([pageNum]);
+        const pageNum = Number(trimmed);
+        if (isNaN(pageNum)) {
+          throw new Error(`Invalid page number: "${trimmed}".`);
         }
+        if (pageNum <= 0) {
+          throw new Error(`Page number must be positive: "${trimmed}".`);
+        }
+        if (pageNum > totalPages) {
+          throw new Error(`Page number out of range (PDF only has ${totalPages} pages): "${trimmed}".`);
+        }
+        pagesToExtract.push([pageNum - 1]);
       }
     }
+  }
+
+  if (pagesToExtract.length === 0) {
+    throw new Error('No valid pages selected to split.');
   }
 
   for (let i = 0; i < pagesToExtract.length; i++) {
@@ -152,6 +185,7 @@ exports.imageToPDF = async (filePaths) => {
  * @returns {Promise<string>} - Path to the compressed PDF file
  */
 exports.compressPDF = async (filePath) => {
+  const originalStats = fs.statSync(filePath);
   const pdfBytes = fs.readFileSync(filePath);
   const pdf = await PDFDocument.load(pdfBytes);
   
@@ -161,7 +195,30 @@ exports.compressPDF = async (filePath) => {
   const outputPath = path.join(TEMP_DIR, outputFilename);
   fs.writeFileSync(outputPath, compressedBytes);
   
-  return outputPath;
+  const compressedStats = fs.statSync(outputPath);
+  
+  let message = 'PDF structure optimized successfully.';
+  let finalPath = outputPath;
+  
+  if (compressedStats.size >= originalStats.size) {
+    // If the compressed version is not smaller, delete it and copy the original file
+    fs.unlinkSync(outputPath);
+    
+    const copiedFilename = `${uuidv4()}_compressed.pdf`;
+    const copiedPath = path.join(TEMP_DIR, copiedFilename);
+    fs.copyFileSync(filePath, copiedPath);
+    
+    finalPath = copiedPath;
+    message = 'PDF was already optimized. No further compression was possible.';
+  } else {
+    const reductionPercent = Math.round(((originalStats.size - compressedStats.size) / originalStats.size) * 100);
+    message = `PDF compressed successfully by ${reductionPercent}%.`;
+  }
+  
+  return {
+    path: finalPath,
+    message
+  };
 };
 
 /**

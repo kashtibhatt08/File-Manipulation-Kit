@@ -10,13 +10,20 @@ const TEMP_DIR = path.join(__dirname, '..', '..', process.env.TEMP_UPLOAD_DIR ||
  */
 const checkFFmpeg = () => {
   return new Promise((resolve) => {
-    ffmpeg.getAvailableFormats((err) => {
-      if (err) {
-        resolve(false);
-      } else {
-        resolve(true);
+    try {
+      if (process.env.FFMPEG_PATH) {
+        ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH);
       }
-    });
+      ffmpeg.getAvailableFormats((err) => {
+        if (err) {
+          resolve(false);
+        } else {
+          resolve(true);
+        }
+      });
+    } catch (e) {
+      resolve(false);
+    }
   });
 };
 
@@ -34,7 +41,7 @@ exports.trimAudio = async (filePath, start, duration) => {
 
   const hasFFmpeg = await checkFFmpeg();
   if (!hasFFmpeg) {
-    throw new Error('FFmpeg is not installed or configured on the server. Please install FFmpeg to process audio files.');
+    throw new Error('FFmpeg is not installed or is not available in PATH.');
   }
 
   return new Promise((resolve, reject) => {
@@ -61,7 +68,7 @@ exports.convertAudio = async (filePath, format) => {
 
   const hasFFmpeg = await checkFFmpeg();
   if (!hasFFmpeg) {
-    throw new Error('FFmpeg is not installed or configured on the server. Please install FFmpeg to process audio files.');
+    throw new Error('FFmpeg is not installed or is not available in PATH.');
   }
 
   return new Promise((resolve, reject) => {
@@ -84,13 +91,12 @@ exports.mergeAudio = async (filePaths) => {
     throw new Error('No files provided for merging');
   }
 
-  const ext = path.extname(filePaths[0]).toLowerCase();
-  const outputFilename = `${uuidv4()}_merged${ext}`;
+  const outputFilename = `${uuidv4()}_merged.mp3`;
   const outputPath = path.join(TEMP_DIR, outputFilename);
 
   const hasFFmpeg = await checkFFmpeg();
   if (!hasFFmpeg) {
-    throw new Error('FFmpeg is not installed or configured on the server. Please install FFmpeg to process audio files.');
+    throw new Error('FFmpeg is not installed or is not available in PATH.');
   }
 
   return new Promise((resolve, reject) => {
@@ -100,8 +106,9 @@ exports.mergeAudio = async (filePaths) => {
       command.input(file);
     });
 
-    // Concatenate inputs
+    // Concatenate inputs and explicitly format to MP3
     command
+      .toFormat('mp3')
       .mergeToFile(outputPath, TEMP_DIR)
       .on('end', () => resolve(outputPath))
       .on('error', (err) => reject(new Error(`FFmpeg error: ${err.message}`)));

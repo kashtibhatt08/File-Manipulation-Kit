@@ -43,7 +43,7 @@ exports.zipFiles = (files) => {
 /**
  * Unzip a single zip file and return paths to extracted contents
  * @param {string} filePath - Absolute path to zip file
- * @returns {Promise<Array<Object>>} - Extracted files with path and originalName
+ * @returns {Promise<Object>} - Extracted files list and the extraction path
  */
 exports.unzipFile = async (filePath) => {
   const extractedFiles = [];
@@ -53,23 +53,55 @@ exports.unzipFile = async (filePath) => {
   // Ensure unique subfolder exists for extracted contents to prevent collision
   fs.mkdirSync(extractionPath, { recursive: true });
 
-  const directory = await unzipper.Open.file(filePath);
-  
+  let directory;
+  try {
+    directory = await unzipper.Open.file(filePath);
+  } catch (err) {
+    fs.rmSync(extractionPath, { recursive: true, force: true });
+    throw new Error('Invalid or corrupted ZIP file.');
+  }
+
+  if (!directory || !directory.files || directory.files.length === 0) {
+    fs.rmSync(extractionPath, { recursive: true, force: true });
+    throw new Error('The uploaded ZIP file is empty.');
+  }
+
   for (const file of directory.files) {
-    // Prevent directory traversal vulnerabilities
-    const safePath = path.join(extractionPath, path.basename(file.path));
-    
+    const targetPath = path.resolve(extractionPath, file.path);
+    const relative = path.relative(extractionPath, targetPath);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      fs.rmSync(extractionPath, { recursive: true, force: true });
+      throw new Error('Path traversal security violation detected in ZIP file.');
+    }
+
+    if (file.type === 'Directory' || file.path.endsWith('/')) {
+      fs.mkdirSync(targetPath, { recursive: true });
+      continue;
+    }
+
+    // Ensure target subdirectory structure exists
+    const targetDir = path.dirname(targetPath);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
     // Create write stream and write buffer contents
     const buffer = await file.buffer();
-    fs.writeFileSync(safePath, buffer);
+    fs.writeFileSync(targetPath, buffer);
 
     extractedFiles.push({
-      path: safePath,
+      path: targetPath,
       originalname: file.path
     });
   }
 
-  // We will ZIP the extracted files back or present them. Or return files details.
-  // In typical web usage, unzipping returns a structure of files. We'll return the list of paths.
-  return extractedFiles;
+  if (extractedFiles.length === 0) {
+    fs.rmSync(extractionPath, { recursive: true, force: true });
+    throw new Error('The uploaded ZIP file does not contain any files.');
+  }
+
+  return {
+    extractionPath,
+    extractedFiles
+  };
 };

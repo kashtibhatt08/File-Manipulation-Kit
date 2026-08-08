@@ -45,6 +45,7 @@ exports.handlePDF = async (req, res, next) => {
     let outputPath;
     let mimeType = 'application/pdf';
     let outputName = 'processed.pdf';
+    let message = 'PDF processing completed';
 
     if (!allFiles.length && action !== 'imageToPDF') {
       return res.status(400).json({ success: false, error: 'Please upload files to process' });
@@ -82,8 +83,10 @@ exports.handlePDF = async (req, res, next) => {
       }
       case 'compress': {
         const filePath = firstFile.path;
-        outputPath = await pdfService.compressPDF(filePath);
+        const compressResult = await pdfService.compressPDF(filePath);
+        outputPath = compressResult.path;
         outputName = 'compressed.pdf';
+        message = compressResult.message;
         break;
       }
       case 'pdfToImage': {
@@ -114,7 +117,7 @@ exports.handlePDF = async (req, res, next) => {
 
     res.json({
       success: true,
-      message: 'PDF processing completed',
+      message,
       downloadUrl: `/api/files/download/${history.downloadToken}`,
       fileName: outputName
     });
@@ -238,7 +241,7 @@ exports.handleAudio = async (req, res, next) => {
         const filePaths = allFiles.map(f => f.path);
         outputPath = await audioService.mergeAudio(filePaths);
         outputName = 'merged_audio.mp3';
-        mimeType = 'audio/mp3';
+        mimeType = 'audio/mpeg';
         break;
       }
       default:
@@ -286,15 +289,15 @@ exports.handleZip = async (req, res, next) => {
           return res.status(400).json({ success: false, error: 'Please upload a ZIP file to extract' });
         }
         const filePath = firstFile.path;
-        const extractedFiles = await zipService.unzipFile(filePath);
+        const result = await zipService.unzipFile(filePath);
+        const { extractionPath, extractedFiles } = result;
+        
         const zipFilesInput = extractedFiles.map(f => ({ path: f.path, originalname: f.originalname }));
         outputPath = await zipService.zipFiles(zipFilesInput);
         outputName = 'extracted_contents.zip';
-        fileHelper.cleanupFiles(extractedFiles.map(f => f.path));
-        const parentDir = path.dirname(extractedFiles[0].path);
-        fs.rmdir(parentDir, { recursive: true }, (err) => {
-          if (err) console.error('Failed to remove extraction folder:', err.message);
-        });
+        
+        // Recursively remove the extraction directory and all its files
+        fs.rmSync(extractionPath, { recursive: true, force: true });
         break;
       }
       default:
